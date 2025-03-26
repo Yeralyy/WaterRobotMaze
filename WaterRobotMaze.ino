@@ -1,23 +1,24 @@
 #include <Arduino.h>
-#include <Ultrasonic.h>
+#include "Ultrasonic.h"
 #include <OneButton.h>
-#include <MotorDriver.h>
+#include "MotorDriver.h"
 #include <SoftwareSerial.h>
 
+bool BLUETOOTHFLAG = 1;
 
 #define A0 14
 #define A1 15
 #define A2 16
 #define A3 17
 
-#define ENA A4
-#define ENB A5
+int ENA = 9;
+int ENB = 3;
 
 #define BT_RX 10
 #define BT_TX 11
 
-int greenPin = 9;
-int bluePin = 12;
+#define greenPin A4
+#define bluePin A5
 int redPin = 13;
 
 int trig1Pin = 2;
@@ -29,14 +30,16 @@ int echo2Pin = 6;
 int trig3Pin = 7;
 int echo3Pin = 8;
 
+int TRASHOLD = 50;
+
 
 /*
 GPIO'S LEVEL:
   LED pin's:
-    green = 9 
-    blue = 12
-    red = 13
-  Button = 3
+    green = A4  -> ENA
+    blue = A5  -> ENB
+    red = 13 
+  Button = 12 
   Ultrasonics:
     trig1 = 2
     echo1 = 4
@@ -52,8 +55,8 @@ GPIO'S LEVEL:
     In2 = A1
     In3 = A2
     In4 = A3
-    ENA = A4
-    ENB = A5
+    ENA = 9
+    ENB = 3
   
   bluetooth:
     Rx = 10
@@ -61,17 +64,19 @@ GPIO'S LEVEL:
     */
 
 
-  
+
 
 
 
 // flags
 
 // mods of work
-boolean rightHandFlag = false;
-boolean leftHandFlag = false;
-boolean bluetoothFlag = false;
+bool rightHandFlag = 0;
+bool leftHandFlag = 0;
+bool bluetoothFlag = 0;
+bool greadyFlag = 0;
 
+bool stopFlag = 0;
 
 
 
@@ -86,13 +91,15 @@ uint32_t tmrFlag = 0;
 // timer for ultrasonic check:
 uint32_t sonicTmr = 0; // 0 milliseconds
 
+uint32_t tmr = 0;
+
 
 
 
 // Periods:
 
 // buton check period
-int butCheckPeriod = 10; // 10 milliseconds
+int butCheckPeriod = 1000; // 10 milliseconds
 
 // sonic period
 int sonicPeriod = 50; // 50 milliseconds
@@ -114,7 +121,8 @@ SoftwareSerial BTSerial(BT_RX, BT_TX);
 OneButton btn;
 
 void setup() {
-  btn.setup(3, INPUT_PULLUP, true);
+  btn.setup(12, INPUT_PULLUP, true);
+  //btn.setDebounceMs(50);
   // indeficators pins
   pinMode(greenPin, OUTPUT);
   pinMode(bluePin, OUTPUT);
@@ -123,6 +131,10 @@ void setup() {
   btn.attachDoubleClick(doubleclick);
   btn.attachClick(oneclick);
   btn.attachMultiClick(tripleclick);
+
+  mtr.setSpeedENA(170);
+  mtr.setSpeedENB(170);
+
 
   // start Serial
   Serial.begin(9600);
@@ -139,7 +151,26 @@ void loop() {
     btn.tick();
   }
 
-  if (millis() - tmrFlag >= flagPeriod && rightHandFlag) {
+  if (stopFlag) {
+    mtr.stop();
+    stopFlag = !stopFlag;
+  }
+
+  
+  /* 
+  Serial.print("Right Hand: ");
+  Serial.print(rightHandFlag);
+  Serial.print(" | ");
+  Serial.print("Left Hand: ");
+  Serial.print(leftHandFlag);
+  Serial.print(" | ");
+  Serial.print("Bluetooth mode: ");
+  Serial.print(bluetoothFlag);
+  Serial.println();
+  */ 
+  
+
+  if (millis() - tmrFlag >= flagPeriod && rightHandFlag == 1) {
     tmrFlag = millis();
     
     // Right hand algorithm:
@@ -151,19 +182,21 @@ void loop() {
       float forwardDistance = sonic2.getDistance();
       float leftDistance = sonic1.getDistance();
       
+      
       Serial.print(rightDistance);
       Serial.print(" | ");
       Serial.print(forwardDistance);
       Serial.print(" | ");
       Serial.print(leftDistance);
       Serial.println();
+      
 
       // check if right distance more than forward:
-      if (rightDistance >= forwardDistance) {
+      if (rightDistance >= forwardDistance && rightDistance < TRASHOLD) {
           // turn right
           Serial.println("Turn Right");
           mtr.right();
-      } else if (forwardDistance >= leftDistance) { // else if forward distance more than left:
+      } else if (forwardDistance >= leftDistance && forwardDistance < TRASHOLD) { // else if forward distance more than left:
           // go forward
           Serial.println("Go Forward");
           mtr.forward(); 
@@ -176,7 +209,7 @@ void loop() {
   }
 
     // delay with timer
-    if (millis() - tmrFlag >= flagPeriod && leftHandFlag) {
+    if (millis() - tmrFlag >= flagPeriod && leftHandFlag == 1) {
     // set timer
     tmrFlag = millis();
 
@@ -189,59 +222,81 @@ void loop() {
       float forwardDistance = sonic2.getDistance();
       float leftDistance = sonic1.getDistance();
 
+      /*
       Serial.print(rightDistance);
       Serial.print(" | ");
       Serial.print(forwardDistance);
       Serial.print(" | ");
       Serial.print(leftDistance);
       Serial.println();
-      
+      */
       // if left direction have more space than forward:
-      if (leftDistance >= forwardDistance) {
+      if (leftDistance >= forwardDistance && leftDistance < TRASHOLD) {
         // turn left
-        Serial.println("Turning left");
+        //Serial.println("Turning left");
         mtr.left();
-      } else if (forwardDistance >= rightDistance) { 
-        Serial.println("Go forward");
+      } else if (forwardDistance >= rightDistance && forwardDistance < TRASHOLD) { 
+        //Serial.println("Go forward");
         mtr.forward();
       } else {
-        Serial.println("Turning Right")
+        //Serial.println("Turning Right");
         mtr.right();
       }
 
       } 
     }
 
-    if (millis() - tmrFlag >= flagPeriod && bluetoothFlag) {
+    if (millis() - tmrFlag >= flagPeriod && bluetoothFlag == 1) {
       tmrFlag = millis();
 
       // if there is something in Bluetooth Serial buffer:
       if (BTSerial.available() > 0) {
+
           // read command:
           char command = BTSerial.read();
+          Serial.println(command);
 
           if (command == 'F') {
-            Serial.println("Moving forward | Bluetooth");
+            //Serial.println("Moving forward | Bluetooth");
             mtr.forward();
           }
           else if (command == 'B') {
-            Serial.println("Moving backward | Bluetooth");
+            //Serial.println("Moving backward | Bluetooth");
             mtr.backward();
           }
           else if (command == 'L') {
-            Serial.println("Moving left | Bluetooth");
+            //Serial.println("Moving left | Bluetooth");
             mtr.left();
           }
           else if (command == 'R') {
-            Serial.println("Moving right | Bluetooth");
+            //Serial.println("Moving right | Bluetooth");
             mtr.right();
           }
-          else if (command == 'S') {
-            Serial.println("Stopping | Bluetooth");
+          else if (command == 'S') { 
+            //Serial.println("Stopping | Bluetooth");
             mtr.stop();
           }
       }
     }
+    /*
+    if (millis() - tmrFlag >= flagPeriod && greadyFlag == 1) {
+      tmrFlag = millis();
+
+      float rightDistance = sonic3.getDistance();
+      float forwardDistance = sonic2.getDistance();
+      float leftDistance = sonic1.getDistance();
+
+      if (forwardDistance > TRASHOLD && forwardDistance > leftDistance && forwardDistance > rightDistance) {
+        mtr.forward();
+      } else if (rightDistance > TRASHOLD && rightDistance > forwardDistance && rightDistance > leftDistance) {
+        mtr.right();
+      } else if (leftDistance > TRASHOLD && leftDistance > forwardDistance && leftDistance > rightDistance) {
+        mtr.left();
+      }
+
+      
+    }
+    */
 
 }
 
@@ -249,47 +304,50 @@ void loop() {
 
 void doubleclick() {
   
-  Serial.println("Double click. Left hand");
+  Serial.println("DOUBLE CLICK. LEFT HAND");
   // double click - left hand algorithm method:
 
   // setting flags
-  leftHandFlag = true;
-  rightHandFlag = false;
-  bluetoothFlag = false;
+  leftHandFlag = 1;
+  rightHandFlag = 0;
+  bluetoothFlag = 0;
 
   // 3 colour indeficator (Blue)
-  digitalWrite(greenPin, LOW);
+  analogWrite(greenPin, 0);
   digitalWrite(redPin, LOW);
-  digitalWrite(bluePin, HIGH);
+  analogWrite(bluePin, 255);
 }
 
 void oneclick() {
 
-  Serial.println("One click. Right hand");
+  Serial.println("ONE CLICK. RIGHT HAND");
   // one clik - right hand algorithm method
 
   // setting flags
-  rightHandFlag = true;
-  leftHandFlag = false;
-  bluetoothFlag = false;
+  rightHandFlag = 1;
+  leftHandFlag = 0;
+  bluetoothFlag = 0;
 
   // 3 colour indeficator (green)
-  digitalWrite(greenPin, HIGH);
+  analogWrite(greenPin, 255);
   digitalWrite(redPin, LOW);
-  digitalWrite(bluePin, LOW);
+  analogWrite(bluePin, 0);
 }
 
 void tripleclick(){
 
-  Serial.println("Tripple click. Bluetooth control");
+  Serial.println("TRIPPLE CLICK. BLUETOOTH");
   // triple click - bluetooth control
 
   // setting flags
-  rightHandFlag = false;
-  leftHandFlag = false;
-  bluetoothFlag = true;
+  rightHandFlag = 0;
+  leftHandFlag = 0;
+  bluetoothFlag = 1;
+
+  stopFlag = bluetoothFlag;
 
   // 3 colour indeficator (red)
-  digitalWrite(greenPin, LOW);
+  analogWrite(greenPin, 0);
   digitalWrite(redPin, HIGH);
-  digitalWrite(bluePin, LOW);}
+  analogWrite(bluePin, 0);
+}
