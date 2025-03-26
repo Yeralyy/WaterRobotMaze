@@ -13,11 +13,17 @@ class Ultrasonic {
         }
 
         float getDistance() {
-            if (_pulseTime <= 0) {
+            if (micros() - _tmr >= _triggerInterval) {
+                _tmr = micros();
                 _triggerUltrasonic();
-                // return the distance
-                return (_pulsTime * 0.0342) / 2
             }
+            
+            if (_pulseTime > 0) {
+                float distance = _calculateDistance(_pulseTime);
+                _pulseTime = 0;
+                return distance;
+            }
+            
             
             
 
@@ -38,7 +44,7 @@ class Ultrasonic {
         void _triggerUltrasonic() {
             digitalWrite(_trigPin, LOW);
 
-            if (millis() - _tmr >= 2) {
+            if (micros() - _tmr >= 2) {
                 // send waves:
                 digitalWrite(_trigPin, HIGH);
                 _tmr = micros();
@@ -46,10 +52,13 @@ class Ultrasonic {
 
             // after sending pulse, measure the echo duration
             _pulseTime = pulseIn(_echoPin, HIGH);
-
-
             
         }
+
+        float _calculateDistance(uint32_t pulseTime) {
+            return (pulseTime * 0.0343) / 2;
+        }
+
 };
 
 #endif
